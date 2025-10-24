@@ -65,29 +65,32 @@ class AuthCookie:
         except json.JSONDecodeError:
             pass
 
-        # 尝试解析 base64 或 base64url 编码的字符串
-        base64_candidate = stripped
-        if base64_candidate.lower().startswith("base64-"):
-            base64_candidate = base64_candidate[7:]
+        # 优先尝试解析 base64- 开头的字符串
+        if stripped.lower().startswith("base64-"):
+            base64_candidate = stripped[7:]
+            base64_candidate = "".join(base64_candidate.split())
+            if not base64_candidate:
+                raise ValueError("base64 cookie 字符串为空")
 
-        # 移除所有空白字符以便解码
-        base64_candidate = "".join(base64_candidate.split())
-        if not base64_candidate:
-            raise ValueError("base64 cookie 字符串为空")
+            padding = len(base64_candidate) % 4
+            if padding:
+                base64_candidate += "=" * (4 - padding)
 
-        padding = len(base64_candidate) % 4
-        if padding:
-            base64_candidate += "=" * (4 - padding)
+            try:
+                decoded = base64.b64decode(base64_candidate).decode("utf-8")
+            except Exception as decode_err:
+                raise ValueError("无法解析 base64 编码的 cookie 字符串") from decode_err
 
+            try:
+                return json.loads(decoded)
+            except json.JSONDecodeError as json_err:
+                raise ValueError("base64 解码后的内容不是有效的 JSON") from json_err
+
+        # 回退到直接解析 JSON（兼容原有配置）
         try:
-            decoded = base64.b64decode(base64_candidate).decode("utf-8")
-        except Exception as decode_err:
-            raise ValueError("无法解析 base64 编码的 cookie 字符串") from decode_err
-
-        try:
-            return json.loads(decoded)
+            return json.loads(stripped)
         except json.JSONDecodeError as json_err:
-            raise ValueError("base64 解码后的内容不是有效的 JSON") from json_err
+            raise ValueError("提供的 cookie 字符串既不是 base64- 开头编码，也不是有效的 JSON") from json_err
 
 
 class Settings(BaseSettings):
