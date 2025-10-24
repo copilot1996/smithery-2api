@@ -56,6 +56,9 @@ class AuthCookie:
             raise ValueError("提供的 cookie 字符串为空")
 
         stripped = raw_value.strip()
+        if stripped and stripped[0] in {"'", '"'} and stripped[-1] == stripped[0]:
+            # 某些环境（例如 .env 文件）会为值自动包裹引号
+            stripped = stripped[1:-1].strip()
         if not stripped:
             raise ValueError("提供的 cookie 字符串为空")
 
@@ -76,10 +79,27 @@ class AuthCookie:
             if padding:
                 base64_candidate += "=" * (4 - padding)
 
+            decoded_bytes = None
+            decode_err = None
             try:
-                decoded = base64.b64decode(base64_candidate).decode("utf-8")
-            except Exception as decode_err:
+                decoded_bytes = base64.b64decode(base64_candidate)
+            except Exception as err:
+                decode_err = err
+
+            if decoded_bytes is None:
+                # 尝试兼容 url-safe base64
+                try:
+                    decoded_bytes = base64.urlsafe_b64decode(base64_candidate)
+                except Exception as err:
+                    decode_err = err
+
+            if decoded_bytes is None:
                 raise ValueError("无法解析 base64 编码的 cookie 字符串") from decode_err
+
+            try:
+                decoded = decoded_bytes.decode("utf-8")
+            except Exception as err:
+                raise ValueError("base64 解码后的内容不是有效的 UTF-8 字符串") from err
 
             try:
                 return json.loads(decoded)
