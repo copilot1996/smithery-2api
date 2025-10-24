@@ -1,8 +1,9 @@
 import os
 import json
 import logging
+import base64
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 # 获取一个日志记录器实例
 logger = logging.getLogger(__name__)
@@ -12,10 +13,9 @@ class AuthCookie:
     处理并生成 Smithery.ai 所需的认证 Cookie。
     它将 .env 文件中的 JSON 字符串转换为一个标准的 HTTP Cookie 头部字符串。
     """
-    def __init__(self, json_string: str):
+    def __init__(self, cookie_string: str):
         try:
-            # 1. 解析从 .env 文件读取的 JSON 字符串
-            data = json.loads(json_string)
+            data = self._parse_cookie_string(cookie_string)
             self.access_token = data.get("access_token")
             self.refresh_token = data.get("refresh_token")
             self.expires_at = data.get("expires_at", 0)
@@ -44,13 +44,50 @@ class AuthCookie:
             # 最终用于 HTTP Header 的字符串，格式为 "key=value"
             self.header_cookie_string = f"{cookie_key}={cookie_value}"
 
-        except json.JSONDecodeError as e:
-            raise ValueError(f"无法从提供的字符串中解析认证 JSON: {e}")
         except Exception as e:
             raise ValueError(f"初始化 AuthCookie 时出错: {e}")
 
     def __repr__(self):
         return f"<AuthCookie expires_at={self.expires_at}>"
+
+    @staticmethod
+    def _parse_cookie_string(raw_value: str) -> Dict[str, Any]:
+        if raw_value is None:
+            raise ValueError("提供的 cookie 字符串为空")
+
+        stripped = raw_value.strip()
+        if not stripped:
+            raise ValueError("提供的 cookie 字符串为空")
+
+        # 尝试直接解析 JSON（向后兼容旧配置）
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+
+        # 尝试解析 base64 或 base64url 编码的字符串
+        base64_candidate = stripped
+        if base64_candidate.lower().startswith("base64-"):
+            base64_candidate = base64_candidate[7:]
+
+        # 移除所有空白字符以便解码
+        base64_candidate = "".join(base64_candidate.split())
+        if not base64_candidate:
+            raise ValueError("base64 cookie 字符串为空")
+
+        padding = len(base64_candidate) % 4
+        if padding:
+            base64_candidate += "=" * (4 - padding)
+
+        try:
+            decoded = base64.b64decode(base64_candidate).decode("utf-8")
+        except Exception as decode_err:
+            raise ValueError("无法解析 base64 编码的 cookie 字符串") from decode_err
+
+        try:
+            return json.loads(decoded)
+        except json.JSONDecodeError as json_err:
+            raise ValueError("base64 解码后的内容不是有效的 JSON") from json_err
 
 
 class Settings(BaseSettings):
