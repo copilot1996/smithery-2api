@@ -72,6 +72,13 @@ class AuthCookie:
         if stripped.lower().startswith("base64-"):
             base64_candidate = stripped[7:]
             base64_candidate = "".join(base64_candidate.split())
+            cleaned_candidate = "".join(
+                ch for ch in base64_candidate
+                if ch.isalnum() or ch in "+/=_-"
+            )
+            if cleaned_candidate != base64_candidate:
+                logger.debug("base64 cookie 字符串包含已移除的不可见或非标准字符")
+                base64_candidate = cleaned_candidate
             if not base64_candidate:
                 raise ValueError("base64 cookie 字符串为空")
 
